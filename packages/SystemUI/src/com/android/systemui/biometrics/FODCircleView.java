@@ -40,6 +40,7 @@ import android.graphics.PorterDuff;
 import android.os.Handler;
 import android.os.UserHandle;
 import android.os.Looper;
+import android.os.Message;
 import android.os.RemoteException;
 import android.provider.Settings;
 import android.view.Display;
@@ -67,7 +68,10 @@ import java.util.NoSuchElementException;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class FODCircleView extends ImageView implements TunerService.Tunable {
+public class FODCircleView extends ImageView implements TunerService.Tunable, Handler.Callback {
+    private final int MSG_HBM_OFF = 1001;
+    private final int MSG_HBM_ON = 1002;
+
     private final int mPositionX;
     private final int mPositionY;
     private final int mSize;
@@ -85,6 +89,10 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
     private int mCurDim;
     private int mDreamingOffsetX;
     private int mDreamingOffsetY;
+
+    private int mHbmOffDelay;
+    private int mHbmOnDelay;
+    private boolean mSupportsAlwaysOnHbm;
 
     private boolean mIsBouncer;
     private boolean mIsDreaming;
@@ -226,11 +234,19 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
             throw new RuntimeException("Unable to get IFingerprintInscreen");
         }
 
+        vendor.lineage.biometrics.fingerprint.inscreen.V1_1.IFingerprintInscreen daemon_v1_1 =
+                getFingerprintInScreenDaemonV1_1(daemon);
+
         try {
             mShouldBoostBrightness = daemon.shouldBoostBrightness();
             mPositionX = daemon.getPositionX();
             mPositionY = daemon.getPositionY();
             mSize = daemon.getSize();
+            if (daemon_v1_1 != null) {
+                mSupportsAlwaysOnHbm = daemon_v1_1.supportsAlwaysOnHBM();
+                mHbmOnDelay = daemon_v1_1.getHbmOnDelay();
+                mHbmOffDelay = daemon_v1_1.getHbmOffDelay();
+            }
         } catch (RemoteException e) {
             throw new RuntimeException("Failed to retrieve FOD circle position or size");
         }
@@ -246,7 +262,7 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
 
         mDreamingMaxOffset = (int) (mSize * 0.1f);
 
-        mHandler = new Handler(Looper.getMainLooper());
+        mHandler = new Handler(Looper.getMainLooper(), this);
 
         mParams.height = mSize;
         mParams.width = mSize;
@@ -272,6 +288,18 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         mUpdateMonitor = KeyguardUpdateMonitor.getInstance(context);
         mUpdateMonitor.registerCallback(mMonitorCallback);
         mFODAnimation = new FODAnimation(context, mPositionX, mPositionY);
+
+        getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            float drawingDimAmount = mParams.dimAmount;
+            if (!mSupportsAlwaysOnHbm) {
+                if (mCurrentDimAmount == 0.0f && drawingDimAmount > 0.0f) {
+                    dispatchPress();
+                    mCurrentDimAmount = drawingDimAmount;
+                } else if (mCurrentDimAmount > 0.0f && drawingDimAmount == 0.0f) {
+                    mCurrentDimAmount = drawingDimAmount;
+                }
+            }
+        });
     }
 
     private CustomSettingsObserver mCustomSettingsObserver = new CustomSettingsObserver(mHandler);
@@ -406,6 +434,17 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         return mFingerprintInscreenDaemon;
     }
 
+    public vendor.lineage.biometrics.fingerprint.inscreen.V1_1.IFingerprintInscreen
+            getFingerprintInScreenDaemonV1_1() {
+        return getFingerprintInScreenDaemonV1_1(getFingerprintInScreenDaemon());
+    }
+
+    public vendor.lineage.biometrics.fingerprint.inscreen.V1_1.IFingerprintInscreen
+            getFingerprintInScreenDaemonV1_1(IFingerprintInscreen daemon) {
+        return vendor.lineage.biometrics.fingerprint.inscreen.V1_1.IFingerprintInscreen.castFrom(
+                   daemon);
+    }
+
     public void dispatchPress() {
         IFingerprintInscreen daemon = getFingerprintInScreenDaemon();
         try {
@@ -452,9 +491,13 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
             mWindowManager.updateViewLayout(this, mParams);
         }
 
-        IFingerprintInscreen daemon = getFingerprintInScreenDaemon();
+        vendor.lineage.biometrics.fingerprint.inscreen.V1_1.IFingerprintInscreen daemon_v1_1 =
+                getFingerprintInScreenDaemonV1_1();
+
         try {
-            daemon.switchHbm(enable);
+            if (daemon_v1_1 != null) {
+                daemon_v1_1.switchHbm(enable);
+            }
         } catch (RemoteException e) {
             // do nothing
         }
@@ -470,6 +513,13 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         setKeepScreenOn(true);
 
         setWallpaperColor(false);
+
+        if (!mSupportsAlwaysOnHbm) {
+            setDim(true);
+        } else {
+            dispatchPress();
+            setColorFilter(Color.argb(0, 0, 0, 0), PorterDuff.Mode.SRC_ATOP);
+        }
         updateAlpha();
         dispatchPress();
 
@@ -491,6 +541,13 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
 
         dispatchRelease();
 
+        if (!mSupportsAlwaysOnHbm) {
+            setDim(false);
+        } else {
+            setColorFilter(Color.argb(mCurDim, 0, 0, 0),
+                    PorterDuff.Mode.SRC_ATOP);
+            invalidate();
+        }
         updateAlpha();
 
         setKeepScreenOn(false);
@@ -581,16 +638,24 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         updatePosition();
 
         dispatchShow();
-        setDim(true);
-        mHandler.postDelayed(() -> { switchHbm(true); } , 250);
+
+        if (mSupportsAlwaysOnHbm) {
+            setDim(true);
+            mHandler.sendEmptyMessageDelayed(MSG_HBM_ON, mHbmOnDelay);
+        }
         setVisibility(View.VISIBLE);
     }
 
     public void hide() {
         mIsShowing = false;
 
-        mHandler.postDelayed(() -> { switchHbm(false); } , 50);
-        setDim(false);
+        if (mSupportsAlwaysOnHbm) {
+            mHandler.sendEmptyMessageDelayed(MSG_HBM_OFF, mHbmOffDelay);
+            if (mHandler.hasMessages(MSG_HBM_ON)) {
+                mHandler.removeMessages(MSG_HBM_ON);
+            }
+            setDim(false);
+        }
         setVisibility(View.GONE);
         hideCircle();
         dispatchHide();
@@ -668,9 +733,11 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
                 // do nothing
             }
 
-            mCurDim = dimAmount;
             mParams.dimAmount = dimAmount / 255.0f;
-            setColorFilter(Color.argb(dimAmount,0,0,0), PorterDuff.Mode.SRC_ATOP);
+            if (mSupportsAlwaysOnHbm) {
+                mCurDim = dimAmount;
+                setColorFilter(Color.argb(dimAmount, 0, 0, 0), PorterDuff.Mode.SRC_ATOP);
+            }
         } else {
             mParams.dimAmount = 0.0f;
         }
@@ -708,4 +775,18 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
             mHandler.post(() -> updatePosition());
         }
     };
+
+    @Override
+    public boolean handleMessage(Message msg) {
+        switch (msg.what) {
+            case MSG_HBM_OFF: {
+                switchHbm(false);
+            } break;
+            case MSG_HBM_ON: {
+                switchHbm(true);
+            } break;
+
+        }
+        return true;
+    }
 }
