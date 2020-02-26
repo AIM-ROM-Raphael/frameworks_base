@@ -68,7 +68,9 @@ import java.util.NoSuchElementException;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class FODCircleView extends ImageView implements TunerService.Tunable, Handler.Callback {
+public class FODCircleView extends ImageView implements Handler.Callback, TunerService.Tunable {
+    private final String SCREEN_BRIGHTNESS = "system:" + Settings.System.SCREEN_BRIGHTNESS;
+
     private final int MSG_HBM_OFF = 1001;
     private final int MSG_HBM_ON = 1002;
 
@@ -79,16 +81,15 @@ public class FODCircleView extends ImageView implements TunerService.Tunable, Ha
     private final int mNavigationBarSize;
     private final boolean mShouldBoostBrightness;
     private final Paint mPaintFingerprint = new Paint();
-    private final String SCREEN_BRIGHTNESS ="system:" + Settings.System.SCREEN_BRIGHTNESS;
     private final WindowManager.LayoutParams mParams = new WindowManager.LayoutParams();
     private final WindowManager mWindowManager;
 
     private IFingerprintInscreen mFingerprintInscreenDaemon;
 
-    private int mCurBrightness;
     private int mCurDim;
     private int mDreamingOffsetX;
     private int mDreamingOffsetY;
+    private int mCurrentBrightness;
 
     private int mHbmOffDelay;
     private int mHbmOnDelay;
@@ -101,6 +102,8 @@ public class FODCircleView extends ImageView implements TunerService.Tunable, Ha
     private boolean mIsCircleShowing;
     private boolean mIsAuthenticated;
     private Handler mHandler;
+
+    private float mCurrentDimAmount = 0.0f;
 
     private LockPatternUtils mLockPatternUtils;
 
@@ -336,6 +339,12 @@ public class FODCircleView extends ImageView implements TunerService.Tunable, Ha
     }
 
     @Override
+    public void onTuningChanged(String key, String newValue) {
+        mCurrentBrightness = newValue != null ? Integer.parseInt(newValue) : 0;
+        setDim(true);
+    }
+
+    @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
@@ -409,12 +418,6 @@ public class FODCircleView extends ImageView implements TunerService.Tunable, Ha
     public void onConfigurationChanged(Configuration newConfig) {
         updateStyle();
         updatePosition();
-    }
-
-    @Override
-    public void onTuningChanged(String key, String newValue) {
-        mCurBrightness = newValue != null ?  Integer.parseInt(newValue) : 0;
-        setDim(true);
     }
 
     public IFingerprintInscreen getFingerprintInScreenDaemon() {
@@ -640,6 +643,7 @@ public class FODCircleView extends ImageView implements TunerService.Tunable, Ha
         dispatchShow();
 
         if (mSupportsAlwaysOnHbm) {
+            Dependency.get(TunerService.class).addTunable(this, SCREEN_BRIGHTNESS);
             setDim(true);
             mHandler.sendEmptyMessageDelayed(MSG_HBM_ON, mHbmOnDelay);
         }
@@ -655,6 +659,7 @@ public class FODCircleView extends ImageView implements TunerService.Tunable, Ha
                 mHandler.removeMessages(MSG_HBM_ON);
             }
             setDim(false);
+            Dependency.get(TunerService.class).removeTunable(this);
         }
         setVisibility(View.GONE);
         hideCircle();
@@ -726,9 +731,14 @@ public class FODCircleView extends ImageView implements TunerService.Tunable, Ha
         if (dim) {
             int dimAmount = 0;
 
+            if (!mSupportsAlwaysOnHbm) {
+                mCurrentBrightness = Settings.System.getInt(getContext().getContentResolver(),
+                       Settings.System.SCREEN_BRIGHTNESS, 100);
+            }
+
             IFingerprintInscreen daemon = getFingerprintInScreenDaemon();
             try {
-                dimAmount = daemon.getDimAmount(mCurBrightness);
+                dimAmount = daemon.getDimAmount(mCurrentBrightness);
             } catch (RemoteException e) {
                 // do nothing
             }
