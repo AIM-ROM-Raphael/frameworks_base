@@ -148,14 +148,8 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
             if (dreaming) {
                 mBurnInProtectionTimer = new Timer();
                 mBurnInProtectionTimer.schedule(new BurnInProtectionTask(), 0, 60 * 1000);
-                if (!mWakeLock.isHeld()) {
-                    mWakeLock.acquire();
-                }
             } else if (mBurnInProtectionTimer != null) {
                 mBurnInProtectionTimer.cancel();
-                if (mWakeLock.isHeld()) {
-                    mWakeLock.release();
-                }
             }
         }
 
@@ -458,16 +452,11 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
 
         setKeepScreenOn(true);
 
-        if (mIsDreaming) {
-            mWakeLock.acquire(300);
-        }
-
         setWallpaperColor(false);
         updateAlpha();
         dispatchPress();
 
         setFODPressedState();
-                mPaintFingerprint.setColor(mColorBackground);
         setColorFilter(Color.argb(0,0,0,0), PorterDuff.Mode.SRC_ATOP);
         invalidate();
     }
@@ -478,7 +467,6 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         setWallpaperColor(true);
         invalidate();
 
-        mPaintFingerprint.setColor(mColorBackground);
         setColorFilter(Color.argb(mCurDim,0,0,0),
                 PorterDuff.Mode.SRC_ATOP);
         invalidate();
@@ -617,7 +605,7 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
 
         if (mIsKeyguard) {
             mParams.x = mPositionX;
-            mParams.y = mPositionY - cutoutMaskedExtra;
+            mParams.y = mPositionY;
         }
 
         if (mIsDreaming) {
