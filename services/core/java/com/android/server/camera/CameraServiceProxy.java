@@ -83,7 +83,7 @@ public class CameraServiceProxy extends SystemService
 
     private static final int RETRY_TIMES = 30;
 
-    private static final int CAMERA_EVENT_DELAY_TIME = 70; //ms
+    private static final int CAMERA_EVENT_DELAY_TIME = 1200; //ms
 
     // Maximum entries to keep in usage history before dumping out
     private static final int MAX_USAGE_HISTORY = 100;
