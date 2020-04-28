@@ -542,7 +542,7 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         if (show) {
             setFODIcon();
         } else {
-            this.setImageResource(ICON_STYLES[mSelectedIcon]);
+            this.setImageResource(ICON_STYLES[0]);
         }
     }
 
