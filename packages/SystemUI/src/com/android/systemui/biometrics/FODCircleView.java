@@ -166,6 +166,7 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
             mIsKeyguard = showing;
             updateStyle();
             updatePosition();
+            updateSettings();
             if (mFODAnimation != null) {
                 mFODAnimation.setAnimationKeyguard(mIsKeyguard);
             }
@@ -264,6 +265,7 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         mCustomSettingsObserver.observe();
         mCustomSettingsObserver.update();
         updatePosition();
+        updateSettings();
         hide();
 
         mUpdateMonitor = KeyguardUpdateMonitor.getInstance(context);
@@ -378,6 +380,7 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
     public void onConfigurationChanged(Configuration newConfig) {
         updateStyle();
         updatePosition();
+        updateSettings();
     }
 
     @Override
