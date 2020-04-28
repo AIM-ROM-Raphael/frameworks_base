@@ -269,6 +269,9 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         mUpdateMonitor = KeyguardUpdateMonitor.getInstance(context);
         mUpdateMonitor.registerCallback(mMonitorCallback);
         mFODAnimation = new FODAnimation(context, mPositionX, mPositionY);
+
+        mShouldRemoveIconOnAOD = Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.SCREEN_OFF_FOD, 0) != 0;
     }
 
     private CustomSettingsObserver mCustomSettingsObserver = new CustomSettingsObserver(mHandler);
@@ -606,6 +609,8 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
                 Settings.System.FOD_RECOGNIZING_ANIMATION, 0) != 0;
         mSelectedIcon = Settings.System.getInt(mContext.getContentResolver(),
                 Settings.System.FOD_ICON, 0);
+        mShouldRemoveIconOnAOD = Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.SCREEN_OFF_FOD, 0) != 0;
         if (mFODAnimation != null) {
             mFODAnimation.update();
         }
@@ -671,11 +676,6 @@ public class FODCircleView extends ImageView implements TunerService.Tunable {
         }
 
         mWindowManager.updateViewLayout(this, mParams);
-    }
-
-    private void updateSettings() {
-        mShouldRemoveIconOnAOD = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.SCREEN_OFF_FOD, 0) != 0;
     }
 
     private class BurnInProtectionTask extends TimerTask {
