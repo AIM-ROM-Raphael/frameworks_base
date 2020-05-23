@@ -40,7 +40,6 @@ import android.graphics.PorterDuff;
 import android.os.Handler;
 import android.os.UserHandle;
 import android.os.Looper;
-import android.os.Message;
 import android.os.RemoteException;
 import android.provider.Settings;
 import android.view.Display;
@@ -68,14 +67,12 @@ import java.util.NoSuchElementException;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class FODCircleView extends ImageView implements Handler.Callback, TunerService.Tunable {
+public class FODCircleView extends ImageView implements TunerService.Tunable {
     private final int mPositionX;
     private final int mPositionY;
     private final int mSize;
     private final int mDreamingMaxOffset;
     private final int mNavigationBarSize;
-    private final int MSG_HBM_OFF = 1001;
-    private final int MSG_HBM_ON = 1002;
     private final boolean mShouldBoostBrightness;
     private final Paint mPaintFingerprint = new Paint();
     private final String SCREEN_BRIGHTNESS ="system:" + Settings.System.SCREEN_BRIGHTNESS;
@@ -249,7 +246,7 @@ public class FODCircleView extends ImageView implements Handler.Callback, TunerS
 
         mDreamingMaxOffset = (int) (mSize * 0.1f);
 
-        mHandler = new Handler(Looper.getMainLooper(), this);
+        mHandler = new Handler(Looper.getMainLooper());
 
         mParams.height = mSize;
         mParams.width = mSize;
@@ -585,18 +582,14 @@ public class FODCircleView extends ImageView implements Handler.Callback, TunerS
 
         dispatchShow();
         setDim(true);
-        mHandler.sendEmptyMessageDelayed(MSG_HBM_ON, 230);
+        mHandler.postDelayed(() -> { switchHbm(true); } , 250);
         setVisibility(View.VISIBLE);
     }
 
     public void hide() {
         mIsShowing = false;
 
-        mHandler.sendEmptyMessageDelayed(MSG_HBM_OFF, 50);
-        if (mHandler.hasMessages(MSG_HBM_ON)) {
-            mHandler.removeMessages(MSG_HBM_ON);
-        }
-
+        mHandler.postDelayed(() -> { switchHbm(false); } , 50);
         setDim(false);
         setVisibility(View.GONE);
         hideCircle();
@@ -715,18 +708,4 @@ public class FODCircleView extends ImageView implements Handler.Callback, TunerS
             mHandler.post(() -> updatePosition());
         }
     };
-
-    @Override
-    public boolean handleMessage(Message msg) {
-        switch(msg.what) {
-            case MSG_HBM_OFF: {
-                switchHbm(false);
-            } break;
-            case MSG_HBM_ON: {
-                switchHbm(true);
-            } break;
-
-        }
-        return true;
-   }
 }
