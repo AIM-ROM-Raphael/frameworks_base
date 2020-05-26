@@ -68,7 +68,7 @@ android_library {
         "dagger2-2.19",
         "jsr330",
         "org.lineageos.platform.internal",
-        "vendor.lineage.biometrics.fingerprint.inscreen-V1.1-java",
+        "vendor.lineage.biometrics.fingerprint.inscreen-V1.0-java",
         "airbnb-lottie",
         "vendor.lineage.powershare-V1.0-java",
     ],
@@ -129,7 +129,7 @@ android_library {
         "dagger2-2.19",
         "jsr330",
         "org.lineageos.platform.internal",
-        "vendor.lineage.biometrics.fingerprint.inscreen-V1.1-java",
+        "vendor.lineage.biometrics.fingerprint.inscreen-V1.0-java",
         "airbnb-lottie",
     ],
     libs: [
