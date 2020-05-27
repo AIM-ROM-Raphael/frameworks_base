@@ -32,7 +32,9 @@ import android.graphics.Paint;
 import android.graphics.drawable.AnimationDrawable;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.drawable.AnimationDrawable;
 import android.hardware.biometrics.BiometricSourceType;
+import android.hardware.display.DisplayManager;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
@@ -55,7 +57,10 @@ import com.android.internal.widget.LockPatternUtils;
 import com.android.keyguard.KeyguardSecurityModel.SecurityMode;
 import com.android.keyguard.KeyguardUpdateMonitor;
 import com.android.keyguard.KeyguardUpdateMonitorCallback;
+import com.android.systemui.Dependency;
 import com.android.systemui.R;
+import com.android.systemui.statusbar.policy.ConfigurationController;
+import com.android.systemui.statusbar.policy.ConfigurationController.ConfigurationListener;
 
 import vendor.lineage.biometrics.fingerprint.inscreen.V1_0.IFingerprintInscreen;
 import vendor.lineage.biometrics.fingerprint.inscreen.V1_0.IFingerprintInscreenCallback;
@@ -64,7 +69,8 @@ import java.util.NoSuchElementException;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class FODCircleView extends ImageView {
+public class FODCircleView extends ImageView implements ConfigurationListener {
+
     private final int mPositionX;
     private final int mPositionY;
     private final int mSize;
@@ -76,10 +82,10 @@ public class FODCircleView extends ImageView {
     private final WindowManager.LayoutParams mParams = new WindowManager.LayoutParams();
     private final WindowManager.LayoutParams mPressedParams = new WindowManager.LayoutParams();
     private final WindowManager mWindowManager;
+    private final DisplayManager mDisplayManager;
 
     private IFingerprintInscreen mFingerprintInscreenDaemon;
 
-    private int mDreamingOffsetX;
     private int mDreamingOffsetY;
 
     private int mColor;
@@ -105,6 +111,8 @@ public class FODCircleView extends ImageView {
     private FODAnimation mFODAnimation;
     private boolean mIsRecognizingAnimEnabled;
     private boolean mShouldRemoveIconOnAOD;
+    private boolean mScreenOffFodEnabled;
+    private boolean mScreenOffFodIconEnabled;
 
     private int mSelectedIcon;
     private final int[] ICON_STYLES = {
@@ -171,8 +179,10 @@ public class FODCircleView extends ImageView {
         @Override
         public void onKeyguardVisibilityChanged(boolean showing) {
             mIsKeyguard = showing;
-            updateStyle();
             updatePosition();
+
+            updateSettings();
+
             if (mFODAnimation != null) {
                 mFODAnimation.setAnimationKeyguard(mIsKeyguard);
             }
@@ -220,6 +230,9 @@ public class FODCircleView extends ImageView {
         }
     };
 
+    private boolean mCutoutMasked;
+    private int mStatusbarHeight;
+
     public FODCircleView(Context context) {
         super(context);
 
@@ -239,15 +252,14 @@ public class FODCircleView extends ImageView {
 
         Resources res = context.getResources();
 
-        mPaintFingerprint.setColor(res.getColor(R.color.config_fodColor));
-        mColor = res.getColor(R.color.config_fodColor);
         mPaintFingerprint.setColor(mColor);
         mPaintFingerprint.setAntiAlias(true);
 
-        mColorBackground = res.getColor(R.color.config_fodColorBackground);
+        mPaintFingerprint.setColor(res.getColor(R.color.config_fodColor));
         mPaintFingerprintBackground.setColor(mColorBackground);
         mPaintFingerprintBackground.setAntiAlias(true);
 
+        mDisplayManager = context.getSystemService(DisplayManager.class);
         mWindowManager = context.getSystemService(WindowManager.class);
 
         mNavigationBarSize = res.getDimensionPixelSize(R.dimen.navigation_bar_size);
@@ -285,6 +297,7 @@ public class FODCircleView extends ImageView {
 
         mCustomSettingsObserver.observe();
         mCustomSettingsObserver.update();
+
         updatePosition();
         hide();
 
@@ -298,7 +311,6 @@ public class FODCircleView extends ImageView {
 
     private CustomSettingsObserver mCustomSettingsObserver = new CustomSettingsObserver(mHandler);
     private class CustomSettingsObserver extends ContentObserver {
-
         CustomSettingsObserver(Handler handler) {
             super(handler);
         }
@@ -371,7 +383,7 @@ public class FODCircleView extends ImageView {
         if (mIsCircleShowing) {
             dispatchPress();
         } else {
-            dispatchRelease();
+            dispatchRelease()
         }
     }
 
@@ -475,6 +487,8 @@ public class FODCircleView extends ImageView {
 
         setFODPressedState();
 
+        setImageDrawable(null);
+        mPressedView.setImageResource(R.drawable.fod_icon_pressed);
         invalidate();
     }
 
@@ -483,7 +497,6 @@ public class FODCircleView extends ImageView {
 
         setImageResource(ICON_STYLES[mSelectedIcon]);
         setWallpaperColor(true);
-
         invalidate();
 
         dispatchRelease();
@@ -569,8 +582,6 @@ public class FODCircleView extends ImageView {
 
         mIsShowing = true;
         mIsAuthenticated = false;
-
-        updatePosition();
 
         updatePosition();
 
@@ -674,11 +685,6 @@ public class FODCircleView extends ImageView {
         }
     }
 
-    private void updateSettings() {
-        mShouldRemoveIconOnAOD = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.SCREEN_OFF_FOD, 0) != 0;
-    }
-
     private boolean isPinOrPattern(int userId) {
         int passwordQuality = mLockPatternUtils.getActivePasswordQuality(userId);
         switch (passwordQuality) {
@@ -715,4 +721,30 @@ public class FODCircleView extends ImageView {
             mHandler.post(() -> updatePosition());
         }
     };
+
+    @Override
+    public void onOverlayChanged() {
+        updateCutoutFlags();
+    }
+
+    private void updateCutoutFlags() {
+        mStatusbarHeight = getContext().getResources().getDimensionPixelSize(
+                com.android.internal.R.dimen.status_bar_height_portrait);
+        boolean cutoutMasked = getContext().getResources().getBoolean(
+                com.android.internal.R.bool.config_maskMainBuiltInDisplayCutout);
+        if (mCutoutMasked != cutoutMasked) {
+            mCutoutMasked = cutoutMasked;
+            updatePosition();
+        }
+    }
+
+    private void updateSettings() {
+        mIsRecognizingAnimEnabled = Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.FOD_RECOGNIZING_ANIMATION, 1) != 0;
+        mScreenOffFodEnabled = Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.SCREEN_OFF_FOD, 0) != 0;
+        mScreenOffFodIconEnabled = Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.SCREEN_OFF_FOD_ICON, 1) != 0;
+        mShouldRemoveIconOnAOD = mScreenOffFodEnabled && !mScreenOffFodIconEnabled;
+    }
 }
